@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>qezu - マルチエージェント並列実行</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 2.5em;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      opacity: 0.9;
+      font-size: 1.1em;
+    }
+
+    .content {
+      padding: 40px;
+    }
+
+    .form-group {
+      margin-bottom: 25px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    textarea, input, select {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 16px;
+      transition: border-color 0.3s;
+    }
+
+    textarea:focus, input:focus, select:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    textarea {
+      min-height: 150px;
+      resize: vertical;
+      font-family: 'Monaco', 'Courier New', monospace;
+    }
+
+    .checkbox-group {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .checkbox-item input[type="checkbox"] {
+      width: auto;
+    }
+
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 15px 40px;
+      font-size: 18px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      width: 100%;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .results {
+      margin-top: 40px;
+      display: none;
+    }
+
+    .results.show {
+      display: block;
+    }
+
+    .result-card {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-left: 4px solid #667eea;
+    }
+
+    .result-card.success {
+      border-left-color: #28a745;
+    }
+
+    .result-card.error {
+      border-left-color: #dc3545;
+    }
+
+    .result-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    .agent-name {
+      font-weight: 700;
+      font-size: 1.2em;
+      text-transform: uppercase;
+    }
+
+    .execution-time {
+      color: #666;
+      font-size: 0.9em;
+    }
+
+    .result-content {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      font-family: 'Monaco', 'Courier New', monospace;
+      font-size: 14px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .summary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+    }
+
+    .summary h3 {
+      margin-bottom: 10px;
+    }
+
+    .summary-stats {
+      display: flex;
+      gap: 30px;
+      margin-top: 15px;
+    }
+
+    .stat-item {
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 2em;
+      font-weight: 700;
+    }
+
+    .stat-label {
+      font-size: 0.9em;
+      opacity: 0.9;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      display: none;
+    }
+
+    .loading.show {
+      display: block;
+    }
+
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #667eea;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .aggregated-result {
+      background: #e8f5e9;
+      border: 2px solid #4caf50;
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 20px;
+    }
+
+    .aggregated-result h3 {
+      color: #2e7d32;
+      margin-bottom: 15px;
+    }
+
+    .aggregated-content {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      font-family: 'Monaco', 'Courier New', monospace;
+      font-size: 14px;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🚀 qezu</h1>
+      <p>マルチエージェント並列実行システム</p>
+    </div>
+
+    <div class="content">
+      <form id="executeForm">
+        <div class="form-group">
+          <label for="prompt">指示・プロンプト *</label>
+          <textarea
+            id="prompt"
+            name="prompt"
+            placeholder="例: TypeScriptで配列を操作するユーティリティ関数を生成してください"
+            required
+          ></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="taskType">タスクタイプ</label>
+          <select id="taskType" name="taskType">
+            <option value="general">一般</option>
+            <option value="code-generation">コード生成</option>
+            <option value="code-completion">コード補完</option>
+            <option value="chat">チャット</option>
+            <option value="slide">スライド生成</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="language">言語（コード生成の場合）</label>
+          <input
+            type="text"
+            id="language"
+            name="language"
+            placeholder="例: typescript, python, javascript"
+          />
+        </div>
+
+        <div class="form-group">
+          <label>実行するエージェント</label>
+          <div class="checkbox-group">
+            <div class="checkbox-item">
+              <input type="checkbox" id="agent-codex" name="agents" value="codex" checked>
+              <label for="agent-codex">Codex</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="agent-claude" name="agents" value="claude" checked>
+              <label for="agent-claude">Claude</label>
+            </div>
+            <div class="checkbox-item">
+              <input type="checkbox" id="agent-gemini" name="agents" value="gemini" checked>
+              <label for="agent-gemini">Gemini</label>
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" id="executeBtn">実行</button>
+      </form>
+
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>マルチエージェントを並列実行中...</p>
+      </div>
+
+      <div class="results" id="results">
+        <div class="summary" id="summary"></div>
+        <div id="resultCards"></div>
+        <div class="aggregated-result" id="aggregatedResult"></div>
+        <div class="slide-viewer" id="slideViewer" style="display: none;">
+          <div class="slide-viewer-header">
+            <h3>スライドプレビュー</h3>
+            <div class="slide-viewer-controls">
+              <button onclick="openSlideInNewWindow()" class="control-btn">新しいウィンドウで開く</button>
+              <button onclick="downloadSlideHTML()" class="control-btn">HTMLダウンロード</button>
+            </div>
+          </div>
+          <iframe id="slideFrame" style="width: 100%; height: 600px; border: 2px solid #e0e0e0; border-radius: 8px; background: white;"></iframe>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = 'http://localhost:3000';
+    let slideDeckData = null;
+    let slideViewerShown = false;
+
+    document.getElementById('executeForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const formData = new FormData(e.target);
+      const prompt = formData.get('prompt');
+      const taskType = formData.get('taskType');
+      const language = formData.get('language');
+      const agents = formData.getAll('agents');
+
+      const loading = document.getElementById('loading');
+      const results = document.getElementById('results');
+      const executeBtn = document.getElementById('executeBtn');
+      const resultCardsDiv = document.getElementById('resultCards');
+      const summaryDiv = document.getElementById('summary');
+      const aggregatedDiv = document.getElementById('aggregatedResult');
+
+      // 結果エリアをクリア
+      resultCardsDiv.innerHTML = '';
+      summaryDiv.innerHTML = '';
+      aggregatedDiv.innerHTML = '';
+      slideDeckData = null;
+      slideViewerShown = false;
+      
+      // スライドビューアーを非表示
+      const slideViewer = document.getElementById('slideViewer');
+      if (slideViewer) {
+        slideViewer.style.display = 'none';
+      }
+
+      loading.classList.add('show');
+      results.classList.remove('show');
+      executeBtn.disabled = true;
+
+      // 進捗表示用のコンテナ
+      const progressContainer = document.createElement('div');
+      progressContainer.id = 'progressContainer';
+      progressContainer.style.cssText = 'margin-top: 20px; padding: 20px; background: #f8f9fa; border-radius: 8px; max-height: 400px; overflow-y: auto; border: 2px solid #e0e0e0;';
+      const progressTitle = document.createElement('h3');
+      progressTitle.textContent = '実行進捗';
+      progressTitle.style.cssText = 'margin: 0 0 15px 0; color: #333; font-size: 18px;';
+      progressContainer.appendChild(progressTitle);
+      loading.appendChild(progressContainer);
+
+      const agentResults = [];
+      // グローバル変数をリセット
+      slideDeckData = null;
+      slideViewerShown = false;
+
+      try {
+        // SSEでストリーミング実行
+        const response = await fetch(`${API_URL}/api/execute/stream`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            prompt,
+            taskType,
+            language: language || undefined,
+            agents: agents.length > 0 ? agents : undefined,
+          }),
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          let currentEvent = '';
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.substring(7).trim();
+              continue;
+            }
+            if (line.startsWith('data: ')) {
+              const data = JSON.parse(line.substring(6));
+              handleSSEEvent(data, progressContainer, agentResults, currentEvent);
+            }
+          }
+        }
+
+        // 最終結果を表示（agentResultsから構築）
+        if (agentResults.length > 0) {
+          const successfulResults = agentResults.filter(r => r.success && r.result);
+          displayResults({
+            success: true,
+            results: agentResults,
+            aggregated: successfulResults.map(r => `## ${r.agent.toUpperCase()}\n\n${r.result}`).join('\n\n---\n\n'),
+            summary: {
+              total: agentResults.length,
+              success: successfulResults.length,
+              failed: agentResults.length - successfulResults.length,
+              averageTime: agentResults.reduce((sum, r) => sum + (r.executionTime || 0), 0) / agentResults.length || 0,
+              totalExecutionTime: agentResults.reduce((sum, r) => sum + (r.executionTime || 0), 0),
+            },
+            slideDeck: slideDeckData,
+          });
+        } else {
+          // 結果が取得できなかった場合
+          alert('エラー: 結果を取得できませんでした');
+        }
+
+        progressContainer.remove();
+        loading.classList.remove('show');
+        results.classList.add('show');
+      } catch (error) {
+        alert(`エラー: ${error.message}`);
+        progressContainer.remove();
+        loading.classList.remove('show');
+      } finally {
+        executeBtn.disabled = false;
+      }
+    });
+
+    let currentSlideDeck = null;
+    let slideUpdateTimeout = null;
+
+    function handleSSEEvent(data, container, agentResults, eventType) {
+      // スライドストリーミングイベントをリアルタイムで処理（文字単位）
+      if (eventType === 'slide-stream') {
+        if (data.slideDeck) {
+          currentSlideDeck = data.slideDeck;
+          slideDeckData = data.slideDeck;
+          
+          // リアルタイムでスライドを表示
+          if (!slideViewerShown) {
+            const slideViewer = document.getElementById('slideViewer');
+            const results = document.getElementById('results');
+            if (slideViewer && results) {
+              slideViewer.style.display = 'block';
+              slideViewerShown = true;
+              results.classList.add('show');
+            }
+          }
+          
+          // デバウンス処理（100msごとに更新）
+          if (slideUpdateTimeout) {
+            clearTimeout(slideUpdateTimeout);
+          }
+          slideUpdateTimeout = setTimeout(() => {
+            displaySlide(data.slideDeck);
+          }, 100);
+        }
+        return;
+      }
+      
+      // スライド生成イベントをリアルタイムで処理
+      if (eventType === 'slide-generated') {
+        if (data.slideDeck) {
+          slideDeckData = data.slideDeck;
+          // リアルタイムでスライドを表示
+          if (!slideViewerShown) {
+            const slideViewer = document.getElementById('slideViewer');
+            const results = document.getElementById('results');
+            if (slideViewer && results) {
+              slideViewer.style.display = 'block';
+              slideViewerShown = true;
+              results.classList.add('show');
+              displaySlide(data.slideDeck);
+            }
+          } else {
+            // 既に表示されている場合は更新
+            displaySlide(data.slideDeck);
+          }
+          
+          // 進捗にも表示
+          const messageDiv = document.createElement('div');
+          messageDiv.style.cssText = 'padding: 10px; margin: 5px 0; background: #e8f5e9; border-radius: 4px; border-left: 3px solid #4caf50; font-size: 14px;';
+          messageDiv.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 18px;">📊</span>
+              <div>
+                <strong style="color: #2e7d32;">スライド生成完了</strong>
+                <span style="margin-left: 10px;">${data.agent ? data.agent.toUpperCase() : ''}から${data.slideDeck.slides.length}枚のスライドが生成されました</span>
+              </div>
+            </div>
+          `;
+          container.appendChild(messageDiv);
+          container.scrollTop = container.scrollHeight;
+        }
+        return;
+      }
+      
+      if (eventType === 'complete' || eventType === 'final') {
+        // スライドデータを保存
+        if (data.slideDeck) {
+          slideDeckData = data.slideDeck;
+        }
+        
+        // complete/finalイベントで全結果を受け取る
+        if (data.results && Array.isArray(data.results)) {
+          data.results.forEach(result => {
+            const existingIndex = agentResults.findIndex(r => r.agent === result.agent);
+            if (existingIndex >= 0) {
+              agentResults[existingIndex] = result;
+            } else {
+              agentResults.push(result);
+            }
+          });
+        }
+        return;
+      }
+
+      const messageDiv = document.createElement('div');
+      messageDiv.style.cssText = 'padding: 10px; margin: 5px 0; background: white; border-radius: 4px; border-left: 3px solid #667eea; font-size: 14px;';
+      
+      if (data.agent) {
+        // エージェント固有のメッセージ
+        const color = data.error ? '#dc3545' : '#28a745';
+        messageDiv.style.borderLeftColor = color;
+        const icon = data.error ? '❌' : '✅';
+        const status = data.error ? 'エラー' : '完了';
+        messageDiv.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 18px;">${icon}</span>
+            <div style="flex: 1;">
+              <strong style="color: ${color};">${data.agent.toUpperCase()}</strong>
+              <span style="color: #666; margin-left: 10px;">${status}</span>
+              ${data.executionTime ? `<span style="color: #999; margin-left: 10px;">(${data.executionTime}ms)</span>` : ''}
+            </div>
+          </div>
+          ${data.message ? `<div style="margin-top: 5px; color: #555;">${escapeHtml(data.message)}</div>` : ''}
+          ${data.error ? `<div style="margin-top: 5px; color: #dc3545; font-family: monospace; font-size: 12px;">${escapeHtml(data.error)}</div>` : ''}
+          ${data.result ? `<div style="margin-top: 5px; color: #555; font-family: monospace; font-size: 12px; max-height: 100px; overflow-y: auto;">${escapeHtml(data.result)}</div>` : ''}
+        `;
+      } else if (data.message) {
+        // 一般的なメッセージ
+        messageDiv.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 18px;">🔄</span>
+            <div>
+              <strong>${new Date().toLocaleTimeString()}</strong>
+              <span style="margin-left: 10px;">${escapeHtml(data.message)}</span>
+            </div>
+          </div>
+        `;
+      }
+
+      container.appendChild(messageDiv);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function displayResults(data) {
+      const summaryDiv = document.getElementById('summary');
+      const resultCardsDiv = document.getElementById('resultCards');
+      const aggregatedDiv = document.getElementById('aggregatedResult');
+      const results = document.getElementById('results');
+
+      // サマリー表示
+      summaryDiv.innerHTML = `
+        <h3>実行結果サマリー</h3>
+        <div class="summary-stats">
+          <div class="stat-item">
+            <div class="stat-value">${data.summary.success}</div>
+            <div class="stat-label">成功</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">${data.summary.failed}</div>
+            <div class="stat-label">失敗</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">${Math.round(data.summary.averageTime)}ms</div>
+            <div class="stat-label">平均実行時間</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">${Math.round(data.summary.totalExecutionTime)}ms</div>
+            <div class="stat-label">合計実行時間</div>
+          </div>
+        </div>
+      `;
+
+      // 各エージェントの結果表示
+      resultCardsDiv.innerHTML = data.results.map(result => `
+        <div class="result-card ${result.success ? 'success' : 'error'}">
+          <div class="result-header">
+            <span class="agent-name">${result.agent}</span>
+            <span class="execution-time">${result.executionTime}ms</span>
+          </div>
+          <div class="result-content">
+            ${result.success ? escapeHtml(result.result || '') : escapeHtml(result.error || 'エラーが発生しました')}
+          </div>
+        </div>
+      `).join('');
+
+      // 統合結果表示
+      if (data.aggregated) {
+        aggregatedDiv.innerHTML = `
+          <h3>統合結果</h3>
+          <div class="aggregated-content">${escapeHtml(data.aggregated)}</div>
+        `;
+      }
+
+      // スライド表示（既に表示されている場合は更新しない）
+      const slideViewer = document.getElementById('slideViewer');
+      if (data.slideDeck && slideViewer && !slideViewerShown) {
+        displaySlide(data.slideDeck);
+        slideViewer.style.display = 'block';
+        slideViewerShown = true;
+      } else if (slideViewer && !data.slideDeck) {
+        slideViewer.style.display = 'none';
+        slideViewerShown = false;
+      }
+
+      results.classList.add('show');
+    }
+
+    function displaySlide(slideDeck) {
+      // スライドHTMLを生成（サーバー側で生成する必要がある）
+      fetch(`${API_URL}/api/slides/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ slideDeck }),
+      })
+      .then(response => response.text())
+      .then(html => {
+        const frame = document.getElementById('slideFrame');
+        const blob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        frame.src = url;
+        window.slideBlobUrl = url; // 後でクリーンアップ用
+      })
+      .catch(error => {
+        console.error('スライド生成エラー:', error);
+        alert('スライドの生成に失敗しました');
+      });
+    }
+
+    function openSlideInNewWindow() {
+      const frame = document.getElementById('slideFrame');
+      if (frame && frame.src) {
+        window.open(frame.src, '_blank');
+      }
+    }
+
+    function downloadSlideHTML() {
+      const frame = document.getElementById('slideFrame');
+      if (frame && frame.contentWindow) {
+        frame.contentWindow.postMessage('download', '*');
+      } else {
+        fetch(`${API_URL}/api/slides/generate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ slideDeck: slideDeckData }),
+        })
+        .then(response => response.text())
+        .then(html => {
+          const blob = new Blob([html], { type: 'text/html' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'slides.html';
+          a.click();
+          URL.revokeObjectURL(url);
+        });
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
+

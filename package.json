@@ -1,0 +1,58 @@
+{
+  "name": "qezu",
+  "version": "1.0.0",
+  "description": "ローカル並列エンジン（PM2×BullMQ）でFlowiseの公開エンドポイントを並列に叩く",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "qezu": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "pm2 start ecosystem.config.cjs",
+    "start:16": "QEZU_CONCURRENCY=2 QEZU_PROCS=8 pm2 start ecosystem.config.cjs",
+    "start:all": "QEZU_CONCURRENCY=2 QEZU_PROCS=8 pm2 start ecosystem.config.cjs",
+    "server": "tsx src/server.ts",
+    "server:prod": "node dist/server.js",
+    "kill-port": "./scripts/kill-port.sh",
+    "stop": "pm2 stop qezu-worker",
+    "restart": "pm2 restart qezu-worker",
+    "logs": "pm2 logs qezu-worker",
+    "status": "pm2 status",
+    "dev": "tsx watch src/cli.ts",
+    "test": "node --test",
+    "test:multi": "./scripts/multi-agent-test.sh",
+    "test:codex": "./scripts/codex-parallel.sh",
+    "test:claude": "./scripts/claude-parallel.sh",
+    "test:gemini": "./scripts/gemini-parallel.sh",
+    "build:parallel": "./scripts/build-parallel.sh",
+    "qezu": "node dist/cli.js"
+  },
+  "keywords": [
+    "flowise",
+    "parallel",
+    "pm2",
+    "bullmq"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "bullmq": "^5.0.0",
+    "execa": "^8.0.1",
+    "ioredis": "^5.3.2",
+    "yaml": "^2.3.4",
+    "commander": "^11.1.0",
+    "dotenv": "^16.3.1",
+    "pm2": "^5.3.0",
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
+

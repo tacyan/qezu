@@ -1,0 +1,51 @@
+# qezu設定ファイル
+# マルチエージェントのワークフロー定義
+
+workflows:
+  # スライド生成フロー例（Flowise）
+  flow-slides:
+    steps:
+      - agent: flowise
+        flowId: flow_abc123  # Flowise UIで取得したFlow IDに置き換えてください
+        vars:
+          topic: "生成AIの歴史"
+        mode: prompt
+
+  # コード雛形生成フロー例（Flowise）
+  flow-code:
+    steps:
+      - agent: flowise
+        flowId: flow_xyz789  # Flowise UIで取得したFlow IDに置き換えてください
+        vars:
+          spec: "Next.jsでLP"
+          framework: "nextjs"
+        mode: prompt
+
+  # Codexでコード生成
+  flow-codex-generate:
+    steps:
+      - agent: codex
+        command: generate
+        prompt: "TypeScriptのユーティリティ関数を生成"
+        options:
+          language: typescript
+          maxTokens: 1000
+
+  # Claudeでチャット
+  flow-claude-chat:
+    steps:
+      - agent: claude
+        command: chat
+        message: "こんにちは、AIについて教えてください"
+        options:
+          model: claude-3-opus
+
+  # Geminiでコード生成
+  flow-gemini-generate:
+    steps:
+      - agent: gemini
+        command: generate
+        prompt: "Pythonのデータ処理関数を生成"
+        options:
+          language: python
+          model: gemini-pro
