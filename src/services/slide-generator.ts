@@ -9,6 +9,15 @@ export interface Slide {
   title: string;
   content: string;
   slideNumber: number;
+  imageUrl?: string; // 画像URL（オプション）
+  colorPalette?: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    background: string;
+    text: string;
+    gradient: string;
+  }; // カラーパレット（オプション）
 }
 
 export interface SlideDeck {
@@ -128,12 +137,20 @@ footer: '${new Date(slideDeck.createdAt).toLocaleDateString('ja-JP')}'
 ---
 
 `;
-  
-  const slidesMarkdown = slideDeck.slides.map((slide, index) => {
-    const slideContent = `# ${slide.title}\n\n${slide.content}`;
-    return slideContent;
-  }).join('\n\n---\n\n');
-  
+
+  const slidesMarkdown = slideDeck.slides
+    .sort((a, b) => a.slideNumber - b.slideNumber) // スライド番号でソート（順序保証）
+    .map((slide, index) => {
+      // 画像を含める
+      const imageSection = slide.imageUrl 
+        ? `![bg](${slide.imageUrl})\n\n` 
+        : '';
+      
+      const slideContent = `${imageSection}# ${slide.title}\n\n${slide.content}`;
+      return slideContent;
+    })
+    .join('\n\n---\n\n');
+
   return marpHeader + slidesMarkdown;
 }
 
@@ -141,17 +158,41 @@ footer: '${new Date(slideDeck.createdAt).toLocaleDateString('ja-JP')}'
  * スライドデッキをHTMLに変換
  */
 export function generateSlideHTML(slideDeck: SlideDeck): string {
-  const slidesHTML = slideDeck.slides.map((slide, idx) => `
-    <div class="slide" data-slide-number="${slide.slideNumber}">
-      <div class="slide-header">
-        <span class="slide-number">${slide.slideNumber} / ${slideDeck.slides.length}</span>
-        <h2 class="slide-title">${escapeHtml(slide.title)}</h2>
+  const slidesHTML = slideDeck.slides
+    .sort((a, b) => a.slideNumber - b.slideNumber) // スライド番号でソート（順序保証）
+    .map((slide, idx) => {
+      // カラーパレットを取得（デフォルトはグラデーション）
+      const palette = slide.colorPalette || {
+        primary: '#667eea',
+        secondary: '#764ba2',
+        accent: '#f093fb',
+        background: '#1a1a1a',
+        text: '#ffffff',
+        gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      };
+      
+      // 画像URLが存在しない場合は、テーマに基づいて生成
+      const imageUrl = slide.imageUrl || `https://source.unsplash.com/1920x1080/?${encodeURIComponent(slide.title.substring(0, 30))}`;
+      
+      // コンテンツの長さに応じて画像のサイズを調整（1ページに収まるように）
+      const contentLength = slide.content.length;
+      const imageHeight = contentLength > 100 ? '40%' : contentLength > 50 ? '50%' : '60%';
+      
+      return `
+    <div class="slide" data-slide-number="${slide.slideNumber}" style="animation: slideIn 0.5s ease-out ${idx * 0.1}s both; background: ${palette.gradient};">
+      <div class="slide-image-container" style="height: ${imageHeight};">
+        <img src="${imageUrl}" alt="${escapeHtml(slide.title)}" class="slide-image" loading="lazy" />
       </div>
-      <div class="slide-content">
+      <div class="slide-header">
+        <span class="slide-number" style="color: ${palette.text};">${slide.slideNumber} / ${slideDeck.slides.length}</span>
+        <h2 class="slide-title" style="color: ${palette.text};">${escapeHtml(slide.title)}</h2>
+      </div>
+      <div class="slide-content" style="color: ${palette.text}; flex: 1; display: flex; align-items: center; justify-content: center;">
         ${markdownToHTML(slide.content)}
       </div>
     </div>
-  `).join('\n');
+  `;
+  }).join('\n');
   
   return `
 <!DOCTYPE html>
@@ -186,8 +227,109 @@ export function generateSlideHTML(slideDeck: SlideDeck): string {
       padding: 60px 80px;
       display: flex;
       flex-direction: column;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       box-shadow: 0 0 50px rgba(0, 0, 0, 0.3);
+      position: relative;
+      overflow: hidden;
+      opacity: 0;
+      animation: slideIn 0.6s ease-out forwards;
+    }
+    
+    .slide.new-slide {
+      animation: slideInNew 0.8s ease-out forwards;
+    }
+    
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateX(50px) scale(0.95);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+      }
+    }
+    
+    @keyframes slideInNew {
+      0% {
+        opacity: 0;
+        transform: translateX(100px) scale(0.9);
+      }
+      50% {
+        transform: translateX(-10px) scale(1.02);
+      }
+      100% {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+      }
+    }
+    
+    .slide-image-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      opacity: 0.2;
+      background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%);
+      overflow: hidden;
+    }
+    
+    .slide-image {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+      filter: blur(1px) brightness(0.6);
+      transform: scale(1.05); /* 少し拡大して余白を埋める */
+    }
+    
+    /* PDF印刷用スタイル */
+    @media print {
+      .slide {
+        page-break-after: always;
+        page-break-inside: avoid;
+        height: 100vh;
+        width: 100vw;
+        margin: 0;
+        padding: 40px 60px;
+      }
+      
+      .slide-image-container {
+        opacity: 0.15;
+      }
+      
+      .slide-image {
+        filter: blur(0.5px) brightness(0.7);
+      }
+      
+      .slide-header {
+        margin-bottom: 30px;
+        padding-bottom: 15px;
+      }
+      
+      .slide-title {
+        font-size: 36px;
+      }
+      
+      .slide-content {
+        font-size: 28px;
+        line-height: 1.5;
+      }
+      
+      .controls {
+        display: none;
+      }
+      
+      .slide-indicator {
+        display: none;
+      }
+    }
+    
+    .slide-header,
+    .slide-content {
+      position: relative;
+      z-index: 1;
     }
     
     .slide-header {
@@ -204,17 +346,24 @@ export function generateSlideHTML(slideDeck: SlideDeck): string {
     }
     
     .slide-title {
-      font-size: 48px;
+      font-size: 42px;
       font-weight: 700;
-      line-height: 1.2;
+      line-height: 1.3;
       margin: 0;
+      text-align: center;
     }
     
     .slide-content {
       flex: 1;
-      font-size: 24px;
-      line-height: 1.8;
+      font-size: 32px;
+      line-height: 1.6;
       overflow-y: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 0;
+      font-weight: 400;
     }
     
     .slide-content h1, .slide-content h2, .slide-content h3 {
@@ -312,7 +461,32 @@ export function generateSlideHTML(slideDeck: SlideDeck): string {
   
   <script>
     let currentSlideIndex = 0;
-    const totalSlides = ${slideDeck.slides.length};
+    let totalSlides = ${slideDeck.slides.length};
+    let lastSlideCount = totalSlides;
+    
+    // メッセージリスナー（新しいスライドが追加されたとき）
+    window.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'newSlide') {
+        const newSlideCount = event.data.slideCount;
+        if (newSlideCount > lastSlideCount) {
+          // 新しいスライドをアニメーション付きで追加
+          const container = document.getElementById('slideContainer');
+          const newSlides = document.querySelectorAll('.slide');
+          newSlides.forEach((slide, idx) => {
+            if (idx >= lastSlideCount) {
+              slide.classList.add('new-slide');
+            }
+          });
+          lastSlideCount = newSlideCount;
+          totalSlides = newSlideCount;
+          document.getElementById('total-slides').textContent = totalSlides;
+          
+          // 最新のスライドにスクロール
+          currentSlideIndex = totalSlides - 1;
+          updateSlide();
+        }
+      }
+    });
     
     function updateSlide() {
       const container = document.getElementById('slideContainer');
@@ -320,7 +494,7 @@ export function generateSlideHTML(slideDeck: SlideDeck): string {
       document.getElementById('current-slide').textContent = currentSlideIndex + 1;
       
       document.getElementById('prevBtn').disabled = currentSlideIndex === 0;
-      document.getElementById('nextBtn').disabled = currentSlideIndex === totalSlides - 1;
+      document.getElementById('nextBtn').disabled = currentSlideIndex >= totalSlides - 1;
     }
     
     function nextSlide() {

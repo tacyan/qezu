@@ -36,7 +36,7 @@ export async function callClaude(
         ...process.env,
         ...options?.env,
       },
-      timeout: options?.timeout || 300000, // デフォルト5分
+      timeout: options?.timeout || 1200000, // デフォルト20分（スライド生成を考慮）
       shell: false,
     });
 
@@ -65,6 +65,7 @@ export async function chatWithClaude(
     maxTokens?: number;
     temperature?: number;
     cwd?: string;
+    timeout?: number;
   }
 ): Promise<string> {
   const args: string[] = ["--print"];
@@ -76,7 +77,10 @@ export async function chatWithClaude(
   // Claudeは直接プロンプトを引数として受け取る
   args.push(message);
 
-  const result = await callClaude("", args, { cwd: options?.cwd });
+  const result = await callClaude("", args, { 
+    cwd: options?.cwd,
+    timeout: options?.timeout || 1200000, // デフォルト20分
+  });
   return result.stdout;
 }
 

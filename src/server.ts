@@ -88,11 +88,22 @@ app.post("/api/execute/stream", async (req, res) => {
     const agentResults: any[] = [];
     const slideParsers = new Map<string, IncrementalSlideParser>();
 
+    // プロンプトからテーマを抽出（スライド生成の場合）
+    let theme: string | undefined;
+    if (taskType === "slide") {
+      const { extractTheme } = await import("./services/prompt-parser.js");
+      theme = extractTheme(prompt);
+    }
+
     // 各エージェントを並列実行
     const agentPromises = options.agents?.map(async (agentName) => {
       // スライド生成の場合はインクリメンタルパーサーを初期化
       if (taskType === "slide") {
-        slideParsers.set(agentName, new IncrementalSlideParser());
+        const parser = new IncrementalSlideParser();
+        if (theme) {
+          parser.setTheme(theme);
+        }
+        slideParsers.set(agentName, parser);
       }
       const agentStartTime = Date.now();
       sendEvent("agent-start", { agent: agentName, message: `${agentName}の実行を開始しました` });
@@ -104,41 +115,121 @@ app.post("/api/execute/stream", async (req, res) => {
         if (agentName === "codex") {
           const { generateCode, generateCodeStream } = await import("./adapters/codex.js");
           if (taskType === "slide") {
-            // スライド生成の場合はストリーミングで実行
-            let streamedResult = "";
-            const slidePrompt = `Create a slide deck presentation about: ${prompt}. Format each slide with ## Slide Title followed by content. Use --- to separate slides.`;
-            const parser = slideParsers.get(agentName);
+            // 並列スライド生成を使用（高速化）
+            const { generateSlidesInParallel } = await import("./services/parallel-slide-generator.js");
             
             try {
-              for await (const chunk of generateCodeStream(slidePrompt, {
-                ...agentOptions,
-                maxTokens: 4000,
-              })) {
-                streamedResult += chunk;
-                // インクリメンタルパーサーでスライドを更新
-                if (parser) {
-                  const partialSlides = parser.append(chunk);
-                  if (partialSlides.length > 0) {
+              // プロンプトからスライド枚数を抽出
+              const { extractSlideCount, extractTheme } = await import("./services/prompt-parser.js");
+              const slideCount = extractSlideCount(prompt);
+              const theme = extractTheme(prompt);
+              
+              // 並列数を決定（デフォルト16、スライド枚数が多い場合はスライド枚数を使用）
+              const parallelCount = Math.max(slideCount, 16);
+              
+              console.log(`[Server] スライド枚数: ${slideCount}枚, テーマ: ${theme}, 並列数: ${parallelCount}`);
+              
+              // 並列スライド生成を開始（Figma Makeを参考）
+              const slides: any[] = [];
+              for await (const slideBatch of generateSlidesInParallel(
+                prompt,
+                slideCount,
+                options.agents || ["codex"],
+                sendEvent,
+                true, // Web検索とFigma Make参照を有効化（プロンプト内に含まれる）
+                theme, // テーマを渡す
+                parallelCount // 並列数を渡す
+              )) {
+                slides.push(...slideBatch);
+              }
+              
+              // 結果を統合
+              result = slides.map(s => `## ${s.title}\n\n${s.content}`).join('\n\n---\n\n');
+              
+              // 最終スライドデッキを送信
+              if (slides.length > 0) {
+                const finalSlideDeck: SlideDeck = {
+                  title: prompt.substring(0, 50) + "...",
+                  slides: slides,
+                  createdAt: new Date().toISOString(),
+                };
+                finalSlideDeck.marpMarkdown = generateMarpMarkdown(finalSlideDeck);
+                sendEvent("slide-complete", {
+                  agent: agentName,
+                  slideDeck: finalSlideDeck,
+                });
+              }
+            } catch (parallelError: any) {
+              // 並列生成が失敗した場合は通常のストリーミングで実行
+              console.error(`[Server] 並列スライド生成エラー [agent=${agentName}, error=${parallelError.message}]`);
+              
+              let streamedResult = "";
+              // Figma Makeを参考にした高品質なスライド生成プロンプト
+            const slidePrompt = `IMPORTANT: Reference Figma Make's design principles and search for the latest professional slide design best practices. Use web search to find information about Figma Make and modern presentation design trends.
+
+Create a professional slide deck presentation about: ${prompt}. 
+
+CRITICAL DESIGN REQUIREMENTS (Figma Make level quality):
+1. Each slide must have ONE powerful sentence (max 15 words, impactful and memorable)
+2. Format: ## Slide Title (one line, bold and clear)
+3. Content: One compelling sentence that delivers the message (max 15 words)
+4. Separate slides with --- on a new line
+5. Design thinking: Each slide should be visually stunning, with clear hierarchy
+6. Professional presentation standards: Clean, modern, and engaging
+7. Visual storytelling: Each slide tells a story, not just information
+8. Typography: Use clear, readable fonts and proper spacing
+9. Color psychology: Suggest appropriate colors based on content (e.g., tech=blue, business=purple, creative=pink)
+10. Layout: Balanced composition with proper white space
+
+Example format:
+## Introduction
+Multi-agent systems revolutionize how AI agents collaborate and solve complex problems.
+
+---
+
+## Core Architecture
+Distributed agents communicate through message passing and shared knowledge bases.
+
+---
+
+Generate 12-16 slides following this format. Make each slide visually distinct and professionally designed.`;
+              const parser = slideParsers.get(agentName);
+              
+              try {
+                for await (const chunk of generateCodeStream(slidePrompt, {
+                  ...agentOptions,
+                  maxTokens: 4000,
+                })) {
+                  streamedResult += chunk;
+                  // インクリメンタルパーサーでスライドを更新
+                  if (parser) {
+                    const previousSlideCount = parser.getSlideDeck("").slides.length;
+                    await parser.append(chunk);
                     const partialSlideDeck = parser.getSlideDeck(prompt.substring(0, 50) + "...");
-                    // Marp形式のMarkdownを生成
-                    partialSlideDeck.marpMarkdown = generateMarpMarkdown(partialSlideDeck);
-                    sendEvent("slide-stream", {
-                      agent: agentName,
-                      chunk,
-                      currentText: streamedResult,
-                      slideDeck: partialSlideDeck,
-                    });
+                    const currentSlideCount = partialSlideDeck.slides.length;
+                    
+                    // スライドが追加された場合、または定期的に更新（より頻繁に）
+                    if (currentSlideCount > previousSlideCount || chunk.length > 0) {
+                      partialSlideDeck.marpMarkdown = generateMarpMarkdown(partialSlideDeck);
+                      sendEvent("slide-stream", {
+                        agent: agentName,
+                        chunk,
+                        currentText: streamedResult,
+                        slideDeck: partialSlideDeck,
+                        newSlideCount: currentSlideCount,
+                        previousSlideCount: previousSlideCount,
+                      });
+                    }
                   }
                 }
+                result = streamedResult;
+              } catch (streamError: any) {
+                console.error(`[Server] ストリーミングエラー [agent=${agentName}, error=${streamError.message}]`);
+                result = await generateCode(slidePrompt, {
+                  ...agentOptions,
+                  maxTokens: 4000,
+                });
               }
-              result = streamedResult;
-            } catch (streamError: any) {
-              // ストリーミングが失敗した場合は通常の方法で実行
-              console.error(`[Server] ストリーミングエラー [agent=${agentName}, error=${streamError.message}]`);
-              result = await generateCode(slidePrompt, {
-                ...agentOptions,
-                maxTokens: 4000,
-              });
             }
           } else {
             result = await generateCode(prompt, {
@@ -295,6 +386,7 @@ app.post("/api/execute/stream", async (req, res) => {
       }
     }
 
+    // 完了イベントを確実に送信
     sendEvent("complete", {
       message: "すべてのエージェントの実行が完了しました",
       results: agentResults,
@@ -302,7 +394,7 @@ app.post("/api/execute/stream", async (req, res) => {
       summary,
       slideDeck,
     });
-
+    
     // 最終結果も送信（クライアント側で処理しやすくするため）
     sendEvent("final", {
       results: agentResults,
@@ -310,7 +402,11 @@ app.post("/api/execute/stream", async (req, res) => {
       summary,
       slideDeck,
     });
-
+    
+    // SSEストリームを確実に終了
+    console.log(`[Server] すべてのエージェントの実行が完了しました [totalTime=${totalTime}ms]`);
+    res.write(`event: end\n`);
+    res.write(`data: ${JSON.stringify({ message: "ストリーム終了" })}\n\n`);
     res.end();
   } catch (error: any) {
     console.error(`[Server] エラー [error=${error.message}]`);

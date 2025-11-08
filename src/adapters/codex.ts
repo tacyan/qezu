@@ -36,7 +36,7 @@ export async function callCodex(
         ...process.env,
         ...options?.env,
       },
-      timeout: options?.timeout || 300000, // デフォルト5分
+      timeout: options?.timeout || 600000, // デフォルト10分（スライド生成を考慮）
       shell: false,
     });
 
@@ -65,11 +65,15 @@ export async function generateCode(
     maxTokens?: number;
     temperature?: number;
     cwd?: string;
+    search?: boolean; // --searchオプション
   }
 ): Promise<string> {
   // Codex CLIは直接プロンプトを受け取るか、execコマンドを使用
   // オプションは --config で設定
   const args: string[] = ["--skip-git-repo-check"];
+
+  // --searchオプションはCodex CLIでサポートされていないため、
+  // プロンプト内に検索指示を含める
 
   if (options?.language) {
     args.push("--config", `language=${options.language}`);
@@ -98,11 +102,15 @@ export async function* generateCodeStream(
     maxTokens?: number;
     temperature?: number;
     cwd?: string;
+    search?: boolean; // --searchオプション
   }
 ): AsyncGenerator<string, void, unknown> {
   const { execa } = await import("execa");
   const codexCmd = process.env.CODEX_CLI_PATH || "codex";
   const args: string[] = ["exec", "--skip-git-repo-check"];
+
+  // --searchオプションはCodex CLIでサポートされていないため、
+  // プロンプト内に検索指示を含める
 
   if (options?.language) {
     args.push("--config", `language=${options.language}`);
@@ -116,28 +124,41 @@ export async function* generateCodeStream(
 
   args.push(prompt);
 
+  // スライド生成の場合はタイムアウトを延長（30枚のスライドを並列生成する場合を考慮）
+  const defaultTimeout = 600000; // デフォルト10分
+  const calculatedTimeout = options?.maxTokens ? options.maxTokens * 200 : defaultTimeout;
+  const timeout = Math.max(calculatedTimeout, defaultTimeout); // 最低10分は確保
+  
   const childProcess = execa(codexCmd, args, {
     cwd: options?.cwd || process.cwd(),
     env: {
       ...process.env,
     },
-    timeout: options?.maxTokens ? options.maxTokens * 100 : 300000,
+    timeout: timeout,
     shell: false,
   });
 
   // stdoutをストリーミングで読み取る
-  if (childProcess.stdout) {
-    // Node.jsのReadableストリームを非同期イテレータとして扱う
-    for await (const chunk of childProcess.stdout) {
-      const text = chunk.toString();
-      // 1文字ずつ送信
-      for (const char of text) {
-        yield char;
+  try {
+    if (childProcess.stdout) {
+      // Node.jsのReadableストリームを非同期イテレータとして扱う
+      for await (const chunk of childProcess.stdout) {
+        const text = chunk.toString();
+        // 1文字ずつ送信
+        for (const char of text) {
+          yield char;
+        }
       }
     }
-  }
 
-  await childProcess;
+    await childProcess;
+  } catch (error: any) {
+    // タイムアウトエラーの場合は、より分かりやすいメッセージを提供
+    if (error.timedOut || error.message?.includes('Timed out')) {
+      throw new Error(`Codex CLIの実行がタイムアウトしました（${timeout / 1000}秒経過）。スライド生成に時間がかかっている可能性があります。`);
+    }
+    throw error;
+  }
 }
 
 /**
